@@ -118,7 +118,7 @@ struct margin_com_args {
   u64 steps_utility; // For ETA logging
   bool save_csv;
   char *dir_for_csv;
-  u8 dwell_time;
+  u16 dwell_time;
 };
 
 struct margin_recv_args {
@@ -157,7 +157,7 @@ struct margin_recv {
 
   u8 parallel_lanes;
   u8 error_limit;
-  u8 dwell_time;
+  u16 dwell_time;
 };
 
 struct margin_lanes_data {

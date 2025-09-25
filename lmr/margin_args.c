@@ -204,13 +204,13 @@ margin_parse_util_args(struct pci_access *pacc, int argc, char **argv, enum marg
                        u8 *links_n)
 {
   struct margin_com_args *com_args = xmalloc(sizeof(*com_args));
-  com_args->error_limit = 4;
+  com_args->error_limit = 5;
   com_args->run_margin = true;
   com_args->verbosity = 1;
   com_args->steps_utility = 0;
   com_args->dir_for_csv = NULL;
   com_args->save_csv = false;
-  com_args->dwell_time = 1;
+  com_args->dwell_time = 10;
 
   int c;
   while ((c = getopt(argc, argv, "+e:co:d:")) != -1)

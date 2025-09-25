@@ -264,7 +264,7 @@ margin_test_lanes(struct margin_lanes_data arg)
               pci_write_word(arg.recv->dev->dev, ctrl_addr, step_cmd);
             }
         }
-      msleep(arg.recv->dwell_time * 1000);
+      msleep(arg.recv->dwell_time);
 
       for (int i = 0; i < arg.lanes_n; i++)
         {
