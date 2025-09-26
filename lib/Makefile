@@ -99,6 +99,10 @@ ifdef PCI_HAVE_PM_RT_THREAD_SMART_DM
 OBJS += rt-thread-smart-dm
 endif
 
+ifdef PCI_HAVE_PM_REMOTE_SOCKET
+OBJS += remote-socket
+endif
+
 all: $(PCILIB) $(PCILIBPC)
 
 ifeq ($(SHARED),no)

@@ -168,6 +168,11 @@ static struct pci_methods *pci_methods[PCI_ACCESS_MAX] = {
 #else
   NULL,
 #endif
+#ifdef PCI_HAVE_PM_REMOTE_SOCKET
+  &pm_remote_socket,
+#else
+  NULL,
+#endif
 };
 
 // If PCI_ACCESS_AUTO is selected, we probe the access methods in this order

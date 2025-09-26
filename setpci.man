@@ -63,6 +63,14 @@ Show detailed help on available options. This option should be used stand-alone.
 .B --dumpregs
 Show a list of all known PCI registers and capabilities. This option should be
 used stand-alone.
+.TP
+.B --slot [<host>[:<port>]@]<slot>
+Forward all configuration space accesses to the specified slot through a
+remote management controller. The slot string must include the complete
+\fIdomain:bus:device.function\fP tuple. When the host (and optional port)
+portion is omitted the controller address is derived from the local IPv4
+configuration: \fIsetpci\fP expects to own \fB192.168.<bus>.1<device>\fP and
+will contact \fB192.168.<bus>.<device>\fP on port 4001.
 
 .SS PCI access options
 .PP
