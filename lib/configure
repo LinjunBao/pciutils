@@ -79,6 +79,7 @@ case $sys in
 		echo >>$c '#define PCI_PATH_DEVMEM_DEVICE "/dev/mem"'
 		echo >>$c '#define PCI_PATH_ACPI_MCFG "/sys/firmware/acpi/tables/MCFG"'
 		echo >>$c '#define PCI_PATH_EFI_SYSTAB "/sys/firmware/efi/systab"'
+		echo >>$c '#define PCI_HAVE_PM_REMOTE_SOCKET'
 		case $cpu in
 				i?86|x86_64)	echo_n " i386-ports"
 						echo >>$c '#define PCI_HAVE_PM_INTEL_CONF'

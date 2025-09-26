@@ -54,6 +54,67 @@ struct group {
 static struct group *first_group, **last_group = &first_group;
 static int need_bus_scan;
 static unsigned int max_values[] = { 0, 0xff, 0xffff, 0, 0xffffffff };
+static char *remote_slot_spec;
+static char *remote_slot_bdf;
+static struct pci_filter remote_slot_filter;
+static int remote_slot_enabled;
+
+static void
+consume_remote_slot_option(int *argc, char ***argvp)
+{
+  char **argv = *argvp;
+  int dst = 1;
+
+  for (int src = 1; src < *argc; src++)
+    {
+      char *arg = argv[src];
+
+      if (!strcmp(arg, "--"))
+        {
+          while (src < *argc)
+            argv[dst++] = argv[src++];
+          break;
+        }
+
+      if (!strcmp(arg, "--slot") || !strncmp(arg, "--slot=", 7))
+        {
+          char *value;
+
+          if (remote_slot_spec)
+            die("--slot specified multiple times");
+
+          if (arg[6] == '=')
+            {
+              value = arg + 7;
+              if (!*value)
+                die("--slot requires an argument");
+            }
+          else
+            {
+              if (src + 1 >= *argc)
+                die("--slot requires an argument");
+              value = argv[++src];
+              if (!*value)
+                die("--slot requires an argument");
+            }
+
+          remote_slot_spec = xstrdup(value);
+
+          const char *at = strrchr(value, '@');
+          const char *bdf = at ? at + 1 : value;
+          if (!*bdf)
+            die("--slot requires a device address after '@'");
+          remote_slot_bdf = xstrdup(bdf);
+
+          continue;
+        }
+
+      argv[dst++] = arg;
+    }
+
+  argv[dst] = NULL;
+  *argc = dst;
+}
 
 static int
 matches_single_device(struct group *group)
@@ -432,6 +493,7 @@ usage(void)
 "-D\t\tList changes, don't commit them\n"
 "-r\t\tUse raw access without bus scan if possible\n"
 "--dumpregs\tDump all known register names and exit\n"
+"--slot [<host>[:<port>]@]<slot>\tAccess remote slot via MCU socket\n"
 "\n"
 "PCI access options:\n"
 GENERIC_HELP
@@ -557,12 +619,24 @@ static int parse_filter(int argc, char **argv, int i, struct group *group)
   switch (c[1])
     {
     case 's':
-      if (d = pci_filter_parse_slot(&group->filter, d))
-	parse_err("Unable to parse filter -s %s", d);
+      {
+        struct pci_filter tmp;
+
+        pci_filter_init(pacc, &tmp);
+        if (d = pci_filter_parse_slot(&tmp, d))
+          parse_err("Unable to parse filter -s %s", d);
+        if (remote_slot_enabled &&
+            (tmp.domain != remote_slot_filter.domain ||
+             tmp.bus != remote_slot_filter.bus ||
+             tmp.slot != remote_slot_filter.slot ||
+             tmp.func != remote_slot_filter.func))
+          parse_err("--slot cannot be combined with a different -s filter");
+        group->filter = tmp;
+      }
       break;
     case 'd':
       if (d = pci_filter_parse_id(&group->filter, d))
-	parse_err("Unable to parse filter -d %s", d);
+        parse_err("Unable to parse filter -d %s", d);
       break;
     default:
       parse_err("Unknown filter option -%c", c[1]);
@@ -798,17 +872,22 @@ static void parse_ops(int argc, char **argv, int i)
       char *c = argv[i++];
 
       if (*c == '-')
-	{
-	  if (!group || group->first_op)
-	    group = new_group();
-	  i = parse_filter(argc, argv, i-1, group);
-	}
+        {
+          if (!group || group->first_op)
+            group = new_group();
+          i = parse_filter(argc, argv, i-1, group);
+        }
       else
-	{
-	  if (!group)
-	    parse_err("Filter specification expected");
-	  parse_op(c, group);
-	}
+        {
+          if (!group)
+            {
+              if (!remote_slot_enabled)
+                parse_err("Filter specification expected");
+              group = new_group();
+              group->filter = remote_slot_filter;
+            }
+          parse_op(c, group);
+        }
     }
   if (!group)
     parse_err("No operation specified");
@@ -818,10 +897,32 @@ int
 main(int argc, char **argv)
 {
   int i;
+  char *msg;
+
+  consume_remote_slot_option(&argc, &argv);
 
   pacc = pci_alloc();
   pacc->error = die;
+  if (remote_slot_spec)
+    {
+      struct pci_filter tmp;
+
+      pci_filter_init(pacc, &tmp);
+      if (msg = pci_filter_parse_slot(&tmp, remote_slot_bdf))
+        die("--slot: %s", msg);
+      remote_slot_filter = tmp;
+      remote_slot_enabled = 1;
+    }
   i = parse_options(argc, argv);
+
+  if (remote_slot_spec)
+    {
+      if (pacc->method != PCI_ACCESS_AUTO && pacc->method != PCI_ACCESS_REMOTE_SOCKET)
+        parse_err("--slot cannot be combined with explicit PCI access method selection");
+      if (pci_set_param(pacc, "remote.slot", remote_slot_spec) < 0)
+        die("Unable to configure remote slot access");
+      pacc->method = PCI_ACCESS_REMOTE_SOCKET;
+    }
 
   pci_init(pacc);
 

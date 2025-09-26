@@ -157,6 +157,15 @@ https://web.archive.org/web/20110221133326/https://www.microsoft.com/whdc/devtoo
 .br
 https://web.archive.org/web/20110214012715/https://www.microsoft.com/whdc/devtools/debugging/install64bit.mspx
 .TP
+.B remote-socket
+Forward configuration space accesses to a remote microcontroller over a TCP
+socket. This method honours the
+.B remote.timeout
+parameter for request timeouts. Unless a host is specified explicitly through
+.B remote.slot
+the library derives it from the requested bus and device numbers and connects
+to the controller on TCP port 4001.
+.TP
 .B aos-expansion
 Access method used on PowerPC Amiga running OS4+. Access is made through Expansion.library. It offers read and write access to configuration space.
 .TP
@@ -199,6 +208,18 @@ Path to the sysfs device tree.
 .TP
 .B rt-thread-smart-dm.path
 Path to the rt-thread smart DM procfs device tree.
+.TP
+.B remote.slot
+Slot specification for the \fBremote-socket\fP access method. The value must be
+of the form [\fIhost\fP[:\fIport\fP]@]\fIdomain:bus:device.function\fP and
+identifies both the remote controller and the target PCI device. When the host
+portion is omitted the library expects to run on \fB192.168.<bus>.1<device>\fP
+and contacts \fB192.168.<bus>.<device>\fP on port 4001.
+.TP
+.B remote.timeout
+Timeout in milliseconds for socket communication when using the
+\fBremote-socket\fP access method. The default is 5000 milliseconds. A value of
+zero disables the timeout.
 .TP
 .B devmem.path
 Path to the /dev/mem device or path to the \\Device\\PhysicalMemory NT section

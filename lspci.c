@@ -35,6 +35,68 @@ const char program_name[] = "lspci";
 
 static char options[] = "nvbxs:d:tPi:mgp:qkMDQ" GENERIC_OPTIONS ;
 
+static char *opt_remote_slot_spec;
+static char *opt_remote_slot_bdf;
+static struct pci_filter remote_slot_filter;
+static int remote_slot_enabled;
+
+static void
+consume_remote_slot_option(int *argc, char ***argvp)
+{
+  char **argv = *argvp;
+  int dst = 1;
+
+  for (int src = 1; src < *argc; src++)
+    {
+      char *arg = argv[src];
+
+      if (!strcmp(arg, "--"))
+        {
+          while (src < *argc)
+            argv[dst++] = argv[src++];
+          break;
+        }
+
+      if (!strcmp(arg, "--slot") || !strncmp(arg, "--slot=", 7))
+        {
+          char *value;
+
+          if (opt_remote_slot_spec)
+            die("--slot specified multiple times");
+
+          if (arg[6] == '=')
+            {
+              value = arg + 7;
+              if (!*value)
+                die("--slot requires an argument");
+            }
+          else
+            {
+              if (src + 1 >= *argc)
+                die("--slot requires an argument");
+              value = argv[++src];
+              if (!*value)
+                die("--slot requires an argument");
+            }
+
+          opt_remote_slot_spec = xstrdup(value);
+
+          const char *at = strrchr(value, '@');
+          const char *bdf = at ? at + 1 : value;
+          if (!*bdf)
+            die("--slot requires a device address after '@'");
+          opt_remote_slot_bdf = xstrdup(bdf);
+
+          continue;
+        }
+
+      argv[dst++] = arg;
+    }
+
+  argv[dst] = NULL;
+  *argc = dst;
+}
+
 static char help_msg[] =
 "Usage: lspci [<switches>]\n"
 "\n"
@@ -74,6 +136,7 @@ static char help_msg[] =
 "-p <file>\tLook up kernel modules in a given file instead of default modules.pcimap\n"
 #endif
 "-M\t\tEnable `bus mapping' mode (dangerous; root only)\n"
+"--slot [<host>[:<port>]@]<slot>\tAccess remote slot via MCU socket\n"
 "\n"
 "PCI access options:\n"
 GENERIC_HELP
@@ -1112,6 +1175,8 @@ main(int argc, char **argv)
   int i;
   char *msg;
 
+  consume_remote_slot_option(&argc, &argv);
+
   if (argc == 2 && !strcmp(argv[1], "--version"))
     {
       puts("lspci version " PCIUTILS_VERSION);
@@ -1121,6 +1186,19 @@ main(int argc, char **argv)
   pacc = pci_alloc();
   pacc->error = die;
   pci_filter_init(pacc, &filter);
+
+  if (opt_remote_slot_spec)
+    {
+      struct pci_filter tmp;
+
+      pci_filter_init(pacc, &tmp);
+      if (msg = pci_filter_parse_slot(&tmp, opt_remote_slot_bdf))
+        die("--slot: %s", msg);
+      remote_slot_filter = tmp;
+      remote_slot_enabled = 1;
+      filter = tmp;
+      opt_filter = 1;
+    }
 
   while ((i = getopt(argc, argv, options)) != -1)
     switch (i)
@@ -1135,10 +1213,22 @@ main(int argc, char **argv)
 	pacc->buscentric = 1;
 	break;
       case 's':
-	if (msg = pci_filter_parse_slot(&filter, optarg))
-	  die("-s: %s", msg);
-	opt_filter = 1;
-	break;
+        {
+          struct pci_filter tmp;
+
+          pci_filter_init(pacc, &tmp);
+          if (msg = pci_filter_parse_slot(&tmp, optarg))
+            die("-s: %s", msg);
+          if (remote_slot_enabled &&
+              (tmp.domain != remote_slot_filter.domain ||
+               tmp.bus != remote_slot_filter.bus ||
+               tmp.slot != remote_slot_filter.slot ||
+               tmp.func != remote_slot_filter.func))
+            die("--slot cannot be combined with a different -s filter");
+          filter = tmp;
+        }
+        opt_filter = 1;
+        break;
       case 'd':
 	if (msg = pci_filter_parse_id(&filter, optarg))
 	  die("-d: %s", msg);
@@ -1185,15 +1275,24 @@ main(int argc, char **argv)
 #else
       case 'q':
       case 'Q':
-	die("DNS queries are not available in this version");
+        die("DNS queries are not available in this version");
 #endif
       default:
-	if (parse_generic_option(i, pacc, optarg))
-	  break;
+        if (parse_generic_option(i, pacc, optarg))
+          break;
       bad:
-	fprintf(stderr, help_msg, pacc->id_file_name);
-	return 1;
+        fprintf(stderr, help_msg, pacc->id_file_name);
+        return 1;
       }
+
+  if (opt_remote_slot_spec)
+    {
+      if (pacc->method != PCI_ACCESS_AUTO && pacc->method != PCI_ACCESS_REMOTE_SOCKET)
+        die("--slot cannot be combined with explicit PCI access method selection");
+      if (pci_set_param(pacc, "remote.slot", opt_remote_slot_spec) < 0)
+        die("Unable to configure remote slot access");
+      pacc->method = PCI_ACCESS_REMOTE_SOCKET;
+    }
   if (optind < argc)
     goto bad;
 
