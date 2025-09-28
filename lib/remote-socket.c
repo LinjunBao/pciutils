@@ -47,7 +47,7 @@ struct remote_ctx
 static void
 remote_config(struct pci_access *a)
 {
-  pci_define_param(a, "remote.slot", "", "Remote MCU slot specification [<host>[:<port>]@]<slot>");
+  pci_define_param(a, "remote.slot", "", "Remote MCU slot specification [<host>[:<port>]@]<slot_number|domain:bus:slot.func>");
   pci_define_param(a, "remote.timeout", "5000", "Remote MCU socket timeout in milliseconds");
 }
 
@@ -86,22 +86,38 @@ remote_parse_slot(struct remote_ctx *ctx, struct pci_access *a, const char *spec
     }
 
   if (!*slot_part)
-    a->error("Remote slot specification missing device address");
+    a->error("Remote slot specification missing slot number");
 
-  struct pci_filter filter;
-  pci_filter_init(a, &filter);
-  char *err = pci_filter_parse_slot(&filter, slot_part);
-  if (err)
-    a->error("Invalid remote slot specification: %s", err);
-  if (filter.domain < 0 || filter.bus < 0 || filter.slot < 0 || filter.func < 0)
-    a->error("Remote slot requires full domain:bus:slot.func specification");
+  // Try to parse as simple slot number first
+  char *end;
+  long slot_num = strtol(slot_part, &end, 10);
+  if (*end == 0 && slot_num >= 1 && slot_num <= 255)
+    {
+      // Simple slot number (1, 2, 3, 4, etc.)
+      ctx->domain = 0;
+      ctx->bus = 0;
+      ctx->slot = (int)slot_num;
+      ctx->func = 0;
+      snprintf(ctx->slot_id, sizeof(ctx->slot_id), "slot_%ld", slot_num);
+    }
+  else
+    {
+      // Fall back to full PCI address parsing
+      struct pci_filter filter;
+      pci_filter_init(a, &filter);
+      char *err = pci_filter_parse_slot(&filter, slot_part);
+      if (err)
+        a->error("Invalid remote slot specification: %s", err);
+      if (filter.domain < 0 || filter.bus < 0 || filter.slot < 0 || filter.func < 0)
+        a->error("Remote slot requires either a simple slot number (1-255) or full domain:bus:slot.func specification");
 
-  ctx->domain = filter.domain;
-  ctx->bus = filter.bus;
-  ctx->slot = filter.slot;
-  ctx->func = filter.func;
-  snprintf(ctx->slot_id, sizeof(ctx->slot_id), "%04x:%02x:%02x.%u",
-           ctx->domain, ctx->bus, ctx->slot, ctx->func);
+      ctx->domain = filter.domain;
+      ctx->bus = filter.bus;
+      ctx->slot = filter.slot;
+      ctx->func = filter.func;
+      snprintf(ctx->slot_id, sizeof(ctx->slot_id), "%04x:%02x:%02x.%u",
+               ctx->domain, ctx->bus, ctx->slot, ctx->func);
+    }
 
   if (host_part && *host_part)
     {
@@ -166,9 +182,6 @@ remote_select_default_host(struct remote_ctx *ctx)
     a->error("Unable to enumerate network interfaces: %s", strerror(errno));
 
   struct ifaddrs *ifa;
-  unsigned int bus = (unsigned int) (ctx->bus & 0xff);
-  unsigned int slot = (unsigned int) (ctx->slot & 0xff);
-  unsigned int expected_local_octet = slot + 0x10;
 
   for (ifa = ifaddr; ifa; ifa = ifa->ifa_next)
     {
@@ -185,13 +198,10 @@ remote_select_default_host(struct remote_ctx *ctx)
 
       if (o0 != 192 || o1 != 168)
         continue;
-      if (o2 != bus)
-        continue;
-      if (o3 != expected_local_octet)
-        continue;
 
+      unsigned int target_o3 = o3 - 10;
       char buf[INET_ADDRSTRLEN];
-      snprintf(buf, sizeof(buf), "192.168.%u.%u", o2, slot);
+      snprintf(buf, sizeof(buf), "192.168.%u.%u", o2, target_o3);
       ctx->host = pci_strdup(a, buf);
       freeifaddrs(ifaddr);
       return;
@@ -397,7 +407,7 @@ remote_write_word(struct remote_ctx *ctx, unsigned int regaddr, u16 value)
       ctx->acc->error("Failed to send write request to remote MCU");
     }
 
-  unsigned char resp[3];
+  unsigned char resp[1];
   if (remote_recv_all(fd, resp, sizeof(resp)) < 0)
     {
       close(fd);
@@ -413,12 +423,12 @@ remote_write_word(struct remote_ctx *ctx, unsigned int regaddr, u16 value)
 static unsigned int
 remote_regaddr(const struct remote_ctx *ctx, unsigned int pos)
 {
-  unsigned int bus = (unsigned int) (ctx->bus & 0xff);
-  unsigned int slot = (unsigned int) (ctx->slot & 0xff);
-  unsigned int func = (unsigned int) (ctx->func & 0x07);
-  unsigned int offset = pos & ~1U;
+  unsigned int flag = (unsigned int) (0x3 & 0xff);  // bit[19:18]
+  unsigned int slot = (unsigned int) (ctx->slot & 0xff - 1); // bit[17:15]
+  unsigned int rp_enp_flag = (unsigned int) (0); // bit[14]
+  unsigned int offset = pos & ~1U; // bit[13:0]
 
-  return (bus << 16) | (slot << 11) | (func << 8) | (offset & 0xff);
+  return (flag << 18) | (slot << 15) | (rp_enp_flag << 14) | (offset & 0x3fff);
 }
 
 static int
