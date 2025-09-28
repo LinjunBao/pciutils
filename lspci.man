@@ -173,8 +173,9 @@ option to select a different domain.
 .TP
 .B --slot [<host>[:<port>]@]<slot>
 Forward configuration space accesses for the specified slot to a remote
-management controller reachable over TCP. The slot must be provided as a
-complete \fIdomain:bus:device.function\fP tuple. When the optional host (and
+management controller reachable over TCP. The slot may be provided as either a
+simple slot number or a complete \fIdomain:bus:device.function\fP tuple. Any
+unspecified domain, bus, or function components default to zero. When the optional host (and
 port) part is omitted, the utility derives the remote address from the local
 IPv4 assignment: it expects the machine running \fIlspci\fP to own the address
 \fB192.168.<bus>.1<device>\fP and connects to \fB192.168.<bus>.<device>\fP on
