@@ -93,8 +93,15 @@ remote_parse_slot(struct remote_ctx *ctx, struct pci_access *a, const char *spec
   char *err = pci_filter_parse_slot(&filter, slot_part);
   if (err)
     a->error("Invalid remote slot specification: %s", err);
-  if (filter.domain < 0 || filter.bus < 0 || filter.slot < 0 || filter.func < 0)
-    a->error("Remote slot requires full domain:bus:slot.func specification");
+
+  if (filter.slot < 0)
+    a->error("Remote slot specification must include a slot number");
+  if (filter.domain < 0)
+    filter.domain = 0;
+  if (filter.bus < 0)
+    filter.bus = 0;
+  if (filter.func < 0)
+    filter.func = 0;
 
   ctx->domain = filter.domain;
   ctx->bus = filter.bus;

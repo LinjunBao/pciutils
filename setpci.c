@@ -60,6 +60,19 @@ static struct pci_filter remote_slot_filter;
 static int remote_slot_enabled;
 
 static void
+normalize_remote_slot_filter(struct pci_filter *f)
+{
+  if (f->slot < 0)
+    die("--slot requires a slot number");
+  if (f->domain < 0)
+    f->domain = 0;
+  if (f->bus < 0)
+    f->bus = 0;
+  if (f->func < 0)
+    f->func = 0;
+}
+
+static void
 consume_remote_slot_option(int *argc, char ***argvp)
 {
   char **argv = *argvp;
@@ -910,6 +923,7 @@ main(int argc, char **argv)
       pci_filter_init(pacc, &tmp);
       if (msg = pci_filter_parse_slot(&tmp, remote_slot_bdf))
         die("--slot: %s", msg);
+      normalize_remote_slot_filter(&tmp);
       remote_slot_filter = tmp;
       remote_slot_enabled = 1;
     }
