@@ -146,6 +146,7 @@ struct margin_link {
   struct margin_dev down_port;
   struct margin_dev up_port;
   struct margin_link_args args;
+  bool skip_pair_lookup;
 };
 
 enum { MARGIN_REMOTE_SPEC_MAX = 128 };
@@ -223,7 +224,7 @@ void margin_restore_link(struct margin_link *link);
 
 /* Fill margin_params without calling other functions */
 bool margin_read_params(struct pci_access *pacc, struct pci_dev *dev, u8 recvn,
-                        struct margin_params *params);
+                        struct margin_params *params, bool skip_pair_lookup);
 
 enum margin_test_status margin_process_args(struct margin_link *link);
 

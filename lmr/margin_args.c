@@ -134,9 +134,11 @@ margin_parse_dut_identifier(const char *spec, struct margin_dut_identifier *out)
 }
 
 static struct pci_dev *
-dev_for_filter(struct pci_access *pacc, char *filter, bool *skip_role_check)
+dev_for_filter(struct pci_access *pacc, char *filter, bool *skip_role_check,
+               bool *skip_pair_lookup)
 {
   *skip_role_check = false;
+  *skip_pair_lookup = false;
 
   char slot_address[32];
   char *filter_value = filter;
@@ -150,6 +152,7 @@ dev_for_filter(struct pci_access *pacc, char *filter, bool *skip_role_check)
 
       filter_value = slot_address;
       *skip_role_check = true;
+      *skip_pair_lookup = true;
     }
 
   struct pci_filter pci_filter;
@@ -383,12 +386,19 @@ margin_parse_util_args(struct pci_access *pacc, int argc, char **argv, enum marg
       while (optind != argc)
         {
           bool skip_role_check;
-          struct pci_dev *dev = dev_for_filter(pacc, argv[optind], &skip_role_check);
+          bool skip_pair_lookup;
+          struct pci_dev *dev
+            = dev_for_filter(pacc, argv[optind], &skip_role_check, &skip_pair_lookup);
           optind++;
           links = xrealloc(links, (ports_n + 1) * sizeof(*links));
           struct pci_dev *down;
           struct pci_dev *up;
-          if (!margin_find_pair(pacc, dev, &down, &up))
+          if (skip_pair_lookup)
+            {
+              down = dev;
+              up = dev;
+            }
+          else if (!margin_find_pair(pacc, dev, &down, &up))
             die("Cannot find pair for the specified device: %s\n", argv[optind - 1]);
           struct pci_cap *cap = pci_find_cap(down, PCI_CAP_ID_EXP, PCI_CAP_NORMAL);
           if (!cap)
@@ -402,6 +412,7 @@ margin_parse_util_args(struct pci_access *pacc, int argc, char **argv, enum marg
                   "Downstream Component must be at D0 PM state.\n",
                   err);
             }
+          links[ports_n].skip_pair_lookup = skip_pair_lookup;
           init_link_args(&(links[ports_n].args), com_args);
           parse_dev_args(argc, argv, &(links[ports_n].args),
                          links[ports_n].down_port.link_speed - 4);

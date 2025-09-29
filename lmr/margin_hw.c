@@ -90,6 +90,9 @@ margin_verify_link(struct pci_dev *down_port, struct pci_dev *up_port, bool skip
   if ((pci_read_word(down_port, cap->addr + PCI_EXP_LNKSTA) & PCI_EXP_LNKSTA_SPEED) > 5)
     return false;
 
+  if (skip_role_check && down_port == up_port)
+    return true;
+
   u8 down_sec = pci_read_byte(down_port, PCI_SECONDARY_BUS);
 
   // Verify that devices are linked. Optionally enforce that down_port is Root/Downstream Port
@@ -192,6 +195,8 @@ margin_prep_link(struct margin_link *link)
     return false;
   if (!margin_prep_dev(&link->down_port))
     return false;
+  if (link->down_port.dev == link->up_port.dev)
+    return true;
   if (!margin_prep_dev(&link->up_port))
     {
       margin_restore_dev(&link->down_port);
@@ -203,6 +208,10 @@ margin_prep_link(struct margin_link *link)
 void
 margin_restore_link(struct margin_link *link)
 {
+  if (!link)
+    return;
+
   margin_restore_dev(&link->down_port);
-  margin_restore_dev(&link->up_port);
+  if (link->down_port.dev != link->up_port.dev)
+    margin_restore_dev(&link->up_port);
 }

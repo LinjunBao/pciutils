@@ -191,7 +191,7 @@ main(int argc, char **argv)
         {
           if (margin_read_params(
                 pacc, link_args->recvs[j] == 6 ? links[i].up_port.dev : links[i].down_port.dev,
-                link_args->recvs[j], &params))
+                link_args->recvs[j], &params, links[i].skip_pair_lookup))
             {
               u8 steps_t = link_args->steps_t ? link_args->steps_t : params.timing_steps;
               u8 steps_v = link_args->steps_v ? link_args->steps_v : params.volt_steps;
