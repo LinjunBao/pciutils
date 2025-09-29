@@ -424,7 +424,7 @@ static unsigned int
 remote_regaddr(const struct remote_ctx *ctx, unsigned int pos)
 {
   unsigned int flag = (unsigned int) (0x3 & 0xff);  // bit[19:18]
-  unsigned int slot = (unsigned int) (ctx->slot & 0xff - 1); // bit[17:15]
+  unsigned int slot = (unsigned int) ((ctx->slot & 0xff) - 1); // bit[17:15]
   unsigned int rp_enp_flag = (unsigned int) (0); // bit[14]
   unsigned int offset = pos & ~1U; // bit[13:0]
 
