@@ -80,7 +80,7 @@ margin_find_pair(struct pci_access *pacc, struct pci_dev *dev, struct pci_dev **
 }
 
 bool
-margin_verify_link(struct pci_dev *down_port, struct pci_dev *up_port)
+margin_verify_link(struct pci_dev *down_port, struct pci_dev *up_port, bool skip_role_check)
 {
   struct pci_cap *cap = pci_find_cap(down_port, PCI_CAP_ID_EXP, PCI_CAP_NORMAL);
   if (!cap)
@@ -92,9 +92,10 @@ margin_verify_link(struct pci_dev *down_port, struct pci_dev *up_port)
 
   u8 down_sec = pci_read_byte(down_port, PCI_SECONDARY_BUS);
 
-  // Verify that devices are linked, down_port is Root Port or Downstream Port of Switch,
-  // up_port is Function 0 of a Device
-  if (!(down_sec == up_port->bus && margin_port_is_down(down_port) && up_port->func == 0))
+  // Verify that devices are linked. Optionally enforce that down_port is Root/Downstream Port
+  // and up_port is Function 0 of a Device.
+  if (!(down_sec == up_port->bus
+        && (skip_role_check || (margin_port_is_down(down_port) && up_port->func == 0))))
     return false;
 
   struct pci_cap *pm = pci_find_cap(up_port, PCI_CAP_ID_PM, PCI_CAP_NORMAL);
@@ -128,10 +129,11 @@ fill_dev_wrapper(struct pci_dev *dev)
 }
 
 bool
-margin_fill_link(struct pci_dev *down_port, struct pci_dev *up_port, struct margin_link *wrappers)
+margin_fill_link(struct pci_dev *down_port, struct pci_dev *up_port, struct margin_link *wrappers,
+                 bool skip_role_check)
 {
   memset(wrappers, 0, sizeof(*wrappers));
-  if (!margin_verify_link(down_port, up_port))
+  if (!margin_verify_link(down_port, up_port, skip_role_check))
     return false;
   wrappers->down_port = fill_dev_wrapper(down_port);
   wrappers->up_port = fill_dev_wrapper(up_port);
