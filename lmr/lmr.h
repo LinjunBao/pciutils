@@ -195,14 +195,14 @@ bool margin_find_pair(struct pci_access *pacc, struct pci_dev *dev, struct pci_d
                       struct pci_dev **up_port);
 
 /* Verify that devices form the link with 16 GT/s or 32 GT/s data rate */
-bool margin_verify_link(struct pci_dev *down_port, struct pci_dev *up_port);
+bool margin_verify_link(struct pci_dev *down_port, struct pci_dev *up_port, bool skip_role_check);
 
 /* Check Margining Ready bit from Margining Port Status Register */
 bool margin_check_ready_bit(struct pci_dev *dev);
 
 /* Verify link and fill wrappers */
 bool margin_fill_link(struct pci_dev *down_port, struct pci_dev *up_port,
-                      struct margin_link *wrappers);
+                      struct margin_link *wrappers, bool skip_role_check);
 
 /* Disable ASPM, set Hardware Autonomous Speed/Width Disable bits */
 bool margin_prep_link(struct margin_link *link);
