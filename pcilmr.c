@@ -32,7 +32,7 @@ scan_links(struct pci_access *pacc, bool only_ready)
           struct pci_dev *up = NULL;
           margin_find_pair(pacc, p, &down, &up);
 
-          if (down && margin_verify_link(down, up, false))
+          if (down && margin_verify_link(down, up))
             {
               margin_log_bdfs(down, up);
               if (!only_ready && (margin_check_ready_bit(down) || margin_check_ready_bit(up)))

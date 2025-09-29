@@ -37,37 +37,8 @@ const char *usage
     "-v <steps>\t\tSpecify maximum number of steps for Voltage Margining.\n";
 
 static struct pci_dev *
-dev_for_filter(struct pci_access *pacc, char *filter, bool *skip_role_check)
+dev_for_filter(struct pci_access *pacc, char *filter)
 {
-  *skip_role_check = false;
-
-  if (!strncmp(filter, "slot", 4) && filter[4])
-    {
-      char *slot = filter + 4;
-      struct pci_dev *match = NULL;
-
-      for (struct pci_dev *p = pacc->devices; p; p = p->next)
-        {
-          pci_fill_info(p, PCI_FILL_PHYS_SLOT);
-          if (!p->phy_slot)
-            continue;
-
-          if (!strcmp(p->phy_slot, filter) || !strcmp(p->phy_slot, slot)
-              || (!strncmp(p->phy_slot, "slot", 4) && !strcmp(p->phy_slot + 4, slot)))
-            {
-              match = p;
-              if (margin_port_is_down(p))
-                break;
-            }
-        }
-
-      if (!match)
-        die("No such PCI slot: %s or you don't have enough privileges.\n", filter);
-
-      *skip_role_check = true;
-      return match;
-    }
-
   struct pci_filter pci_filter;
   pci_filter_init(pacc, &pci_filter);
   if (pci_filter_parse_slot(&pci_filter, filter))
@@ -114,11 +85,11 @@ find_ready_links(struct pci_access *pacc, struct margin_link *links, bool cnt_on
           struct pci_dev *up = NULL;
           margin_find_pair(pacc, p, &down, &up);
 
-          if (down && margin_verify_link(down, up, false)
+          if (down && margin_verify_link(down, up)
               && (margin_check_ready_bit(down) || margin_check_ready_bit(up)))
             {
               if (!cnt_only)
-                margin_fill_link(down, up, &(links[cnt]), false);
+                margin_fill_link(down, up, &(links[cnt]));
               cnt++;
             }
         }
@@ -298,8 +269,7 @@ margin_parse_util_args(struct pci_access *pacc, int argc, char **argv, enum marg
     {
       while (optind != argc)
         {
-          bool skip_role_check;
-          struct pci_dev *dev = dev_for_filter(pacc, argv[optind], &skip_role_check);
+          struct pci_dev *dev = dev_for_filter(pacc, argv[optind]);
           optind++;
           links = xrealloc(links, (ports_n + 1) * sizeof(*links));
           struct pci_dev *down;
@@ -310,7 +280,7 @@ margin_parse_util_args(struct pci_access *pacc, int argc, char **argv, enum marg
           if (!cap)
             die("Looks like you don't have enough privileges to access "
                 "Device Configuration Space.\nTry to run utility as root.\n");
-          if (!margin_fill_link(down, up, &(links[ports_n]), skip_role_check))
+          if (!margin_fill_link(down, up, &(links[ports_n])))
             {
               margin_gen_bdfs(down, up, err, sizeof(err));
               die("Link %s is not ready for margining.\n"
