@@ -9,9 +9,14 @@
  */
 
 #include <ctype.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifndef NAME_MAX
+#define NAME_MAX 255
+#endif
 
 #include "lmr.h"
 
@@ -56,53 +61,6 @@ skip_slot_prefix(const char *slot)
   return slot;
 }
 
-static const char *
-next_slot_char(const char *slot)
-{
-  while (*slot && !isalnum((unsigned char)*slot))
-    slot++;
-  return slot;
-}
-
-static bool
-slot_strings_equal(const char *lhs, const char *rhs)
-{
-  if (!lhs || !rhs)
-    return false;
-
-  lhs = next_slot_char(lhs);
-  rhs = next_slot_char(rhs);
-
-  while (*lhs && *rhs)
-    {
-      if (tolower((unsigned char)*lhs) != tolower((unsigned char)*rhs))
-        return false;
-
-      lhs = next_slot_char(lhs + 1);
-      rhs = next_slot_char(rhs + 1);
-    }
-
-  lhs = next_slot_char(lhs);
-  rhs = next_slot_char(rhs);
-
-  return !*lhs && !*rhs;
-}
-
-static bool
-slot_identifier_matches(const char *phy_slot, const char *filter)
-{
-  if (!phy_slot || !filter)
-    return false;
-
-  const char *phy_no_prefix = skip_slot_prefix(phy_slot);
-  const char *filter_no_prefix = skip_slot_prefix(filter);
-
-  return slot_strings_equal(phy_slot, filter)
-         || slot_strings_equal(phy_no_prefix, filter)
-         || slot_strings_equal(phy_slot, filter_no_prefix)
-         || slot_strings_equal(phy_no_prefix, filter_no_prefix);
-}
-
 static bool
 looks_like_slot_identifier(const char *filter)
 {
@@ -127,39 +85,101 @@ looks_like_slot_identifier(const char *filter)
   return false;
 }
 
+static bool
+read_slot_address(const char *slot_name, char *address, size_t address_len)
+{
+  if (!slot_name || !*slot_name || strchr(slot_name, '/'))
+    return false;
+
+  char path[PATH_MAX];
+  int written = snprintf(path, sizeof(path), "/sys/bus/pci/slots/%s/address", slot_name);
+  if (written <= 0 || written >= (int)sizeof(path))
+    return false;
+
+  FILE *f = fopen(path, "r");
+  if (!f)
+    return false;
+
+  bool ok = fgets(address, address_len, f) != NULL;
+  fclose(f);
+
+  if (!ok)
+    return false;
+
+  char *newline = strchr(address, '\n');
+  if (newline)
+    *newline = '\0';
+
+  return *address;
+}
+
+static bool
+resolve_slot_identifier(const char *filter, char *address, size_t address_len)
+{
+  if (!filter)
+    return false;
+
+  if (read_slot_address(filter, address, address_len))
+    return true;
+
+  const char *suffix = skip_slot_prefix(filter);
+  if (suffix != filter && *suffix)
+    {
+      char sanitized[NAME_MAX];
+      size_t out = 0;
+      for (const char *c = suffix; *c && out < sizeof(sanitized) - 1; c++)
+        if (isalnum((unsigned char)*c))
+          sanitized[out++] = *c;
+      sanitized[out] = '\0';
+
+      if (out && read_slot_address(sanitized, address, address_len))
+        return true;
+
+      if (out)
+        {
+          char prefixed[NAME_MAX];
+          int written = snprintf(prefixed, sizeof(prefixed), "slot%s", sanitized);
+          if (written > 0 && written < (int)sizeof(prefixed)
+              && read_slot_address(prefixed, address, address_len))
+            return true;
+        }
+    }
+
+  char lowered[NAME_MAX];
+  size_t idx = 0;
+  while (filter[idx] && idx < sizeof(lowered) - 1)
+    {
+      lowered[idx] = tolower((unsigned char)filter[idx]);
+      idx++;
+    }
+  lowered[idx] = '\0';
+
+  if (strcmp(lowered, filter) != 0 && read_slot_address(lowered, address, address_len))
+    return true;
+
+  return false;
+}
+
 static struct pci_dev *
 dev_for_filter(struct pci_access *pacc, char *filter, bool *skip_role_check)
 {
   *skip_role_check = false;
 
+  char slot_address[32];
+  char *filter_value = filter;
+
   if (looks_like_slot_identifier(filter))
     {
-      struct pci_dev *match = NULL;
-
-      for (struct pci_dev *p = pacc->devices; p; p = p->next)
-        {
-          pci_fill_info(p, PCI_FILL_PHYS_SLOT);
-          if (!p->phy_slot)
-            continue;
-
-          if (slot_identifier_matches(p->phy_slot, filter))
-            {
-              match = p;
-              if (margin_port_is_down(p))
-                break;
-            }
-        }
-
-      if (!match)
+      if (!resolve_slot_identifier(filter, slot_address, sizeof(slot_address)))
         die("No such PCI slot: %s or you don't have enough privileges.\n", filter);
 
+      filter_value = slot_address;
       *skip_role_check = true;
-      return match;
     }
 
   struct pci_filter pci_filter;
   pci_filter_init(pacc, &pci_filter);
-  if (pci_filter_parse_slot(&pci_filter, filter))
+  if (pci_filter_parse_slot(&pci_filter, filter_value))
     die("Invalid device ID: %s\n", filter);
 
   if (pci_filter.bus == -1 || pci_filter.slot == -1 || pci_filter.func == -1)
