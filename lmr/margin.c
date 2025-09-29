@@ -457,7 +457,7 @@ margin_read_params(struct pci_access *pacc, struct pci_dev *dev, u8 recvn,
   if (!margin_find_pair(pacc, dev, &down, &up))
     return false;
 
-  if (!margin_fill_link(down, up, &link))
+  if (!margin_fill_link(down, up, &link, false))
     return false;
 
   struct margin_dev *dut = (dev_down ? &link.down_port : &link.up_port);

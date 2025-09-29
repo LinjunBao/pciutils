@@ -8,6 +8,7 @@
  *	SPDX-License-Identifier: GPL-2.0-or-later
  */
 
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -36,9 +37,126 @@ const char *usage
     "-t <steps>\t\tSpecify maximum number of steps for Time Margining.\n"
     "-v <steps>\t\tSpecify maximum number of steps for Voltage Margining.\n";
 
-static struct pci_dev *
-dev_for_filter(struct pci_access *pacc, char *filter)
+static const char *
+skip_slot_prefix(const char *slot)
 {
+  if (!slot)
+    return slot;
+
+  if (tolower((unsigned char)slot[0]) == 's'
+      && tolower((unsigned char)slot[1]) == 'l'
+      && tolower((unsigned char)slot[2]) == 'o'
+      && tolower((unsigned char)slot[3]) == 't')
+    {
+      slot += 4;
+      while (*slot && !isalnum((unsigned char)*slot))
+        slot++;
+    }
+
+  return slot;
+}
+
+static const char *
+next_slot_char(const char *slot)
+{
+  while (*slot && !isalnum((unsigned char)*slot))
+    slot++;
+  return slot;
+}
+
+static bool
+slot_strings_equal(const char *lhs, const char *rhs)
+{
+  if (!lhs || !rhs)
+    return false;
+
+  lhs = next_slot_char(lhs);
+  rhs = next_slot_char(rhs);
+
+  while (*lhs && *rhs)
+    {
+      if (tolower((unsigned char)*lhs) != tolower((unsigned char)*rhs))
+        return false;
+
+      lhs = next_slot_char(lhs + 1);
+      rhs = next_slot_char(rhs + 1);
+    }
+
+  lhs = next_slot_char(lhs);
+  rhs = next_slot_char(rhs);
+
+  return !*lhs && !*rhs;
+}
+
+static bool
+slot_identifier_matches(const char *phy_slot, const char *filter)
+{
+  if (!phy_slot || !filter)
+    return false;
+
+  const char *phy_no_prefix = skip_slot_prefix(phy_slot);
+  const char *filter_no_prefix = skip_slot_prefix(filter);
+
+  return slot_strings_equal(phy_slot, filter)
+         || slot_strings_equal(phy_no_prefix, filter)
+         || slot_strings_equal(phy_slot, filter_no_prefix)
+         || slot_strings_equal(phy_no_prefix, filter_no_prefix);
+}
+
+static bool
+looks_like_slot_identifier(const char *filter)
+{
+  if (!filter || !*filter)
+    return false;
+
+  const char *without_prefix = skip_slot_prefix(filter);
+  if (without_prefix != filter && !*without_prefix)
+    return false;
+
+  if (without_prefix != filter)
+    return true;
+
+  for (const char *c = filter; *c; c++)
+    if (*c == ':' || *c == '.')
+      return false;
+
+  for (const char *c = filter; *c; c++)
+    if (isalnum((unsigned char)*c))
+      return true;
+
+  return false;
+}
+
+static struct pci_dev *
+dev_for_filter(struct pci_access *pacc, char *filter, bool *skip_role_check)
+{
+  *skip_role_check = false;
+
+  if (looks_like_slot_identifier(filter))
+    {
+      struct pci_dev *match = NULL;
+
+      for (struct pci_dev *p = pacc->devices; p; p = p->next)
+        {
+          pci_fill_info(p, PCI_FILL_PHYS_SLOT);
+          if (!p->phy_slot)
+            continue;
+
+          if (slot_identifier_matches(p->phy_slot, filter))
+            {
+              match = p;
+              if (margin_port_is_down(p))
+                break;
+            }
+        }
+
+      if (!match)
+        die("No such PCI slot: %s or you don't have enough privileges.\n", filter);
+
+      *skip_role_check = true;
+      return match;
+    }
+
   struct pci_filter pci_filter;
   pci_filter_init(pacc, &pci_filter);
   if (pci_filter_parse_slot(&pci_filter, filter))
@@ -85,11 +203,11 @@ find_ready_links(struct pci_access *pacc, struct margin_link *links, bool cnt_on
           struct pci_dev *up = NULL;
           margin_find_pair(pacc, p, &down, &up);
 
-          if (down && margin_verify_link(down, up)
+          if (down && margin_verify_link(down, up, false)
               && (margin_check_ready_bit(down) || margin_check_ready_bit(up)))
             {
               if (!cnt_only)
-                margin_fill_link(down, up, &(links[cnt]));
+                margin_fill_link(down, up, &(links[cnt]), false);
               cnt++;
             }
         }
@@ -269,7 +387,8 @@ margin_parse_util_args(struct pci_access *pacc, int argc, char **argv, enum marg
     {
       while (optind != argc)
         {
-          struct pci_dev *dev = dev_for_filter(pacc, argv[optind]);
+          bool skip_role_check;
+          struct pci_dev *dev = dev_for_filter(pacc, argv[optind], &skip_role_check);
           optind++;
           links = xrealloc(links, (ports_n + 1) * sizeof(*links));
           struct pci_dev *down;
@@ -280,7 +399,7 @@ margin_parse_util_args(struct pci_access *pacc, int argc, char **argv, enum marg
           if (!cap)
             die("Looks like you don't have enough privileges to access "
                 "Device Configuration Space.\nTry to run utility as root.\n");
-          if (!margin_fill_link(down, up, &(links[ports_n])))
+          if (!margin_fill_link(down, up, &(links[ports_n]), skip_role_check))
             {
               margin_gen_bdfs(down, up, err, sizeof(err));
               die("Link %s is not ready for margining.\n"
