@@ -11,10 +11,59 @@
 #include <memory.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "lmr/lmr.h"
 
 const char program_name[] = "pcilmr";
+
+static void
+configure_remote_backend(struct pci_access *pacc, int argc, char **argv)
+{
+  bool skip_next = false;
+  struct margin_dut_identifier dut;
+
+  for (int i = 1; i < argc; i++)
+    {
+      if (skip_next)
+        {
+          skip_next = false;
+          continue;
+        }
+
+      const char *arg = argv[i];
+      if (!arg || !*arg)
+        continue;
+
+      if (arg[0] == '-')
+        {
+          const char *opt = arg + 1;
+          while (*opt == '-')
+            opt++;
+          if (!*opt)
+            continue;
+
+          if (!opt[1] && strchr("eodrlptvg", opt[0]))
+            skip_next = true;
+          continue;
+        }
+
+      if (!margin_parse_dut_identifier(arg, &dut))
+        continue;
+
+      if (pci_set_param(pacc, "remote.slot", dut.remote_spec) < 0)
+        die("Unable to configure remote slot specifier: %s", dut.remote_spec);
+
+      if (pacc->method == PCI_ACCESS_AUTO)
+        {
+          int method = pci_lookup_method("remote-socket");
+          if (method >= 0)
+            pacc->method = method;
+        }
+
+      return;
+    }
+}
 
 static void
 scan_links(struct pci_access *pacc, bool only_ready)
@@ -64,6 +113,7 @@ main(int argc, char **argv)
   u8 *results_n;
 
   pacc = pci_alloc();
+  configure_remote_backend(pacc, argc, argv);
   pci_init(pacc);
   pci_scan_bus(pacc);
 

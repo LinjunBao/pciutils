@@ -9,14 +9,9 @@
  */
 
 #include <ctype.h>
-#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#ifndef NAME_MAX
-#define NAME_MAX 255
-#endif
 
 #include "lmr.h"
 
@@ -42,122 +37,100 @@ const char *usage
     "-t <steps>\t\tSpecify maximum number of steps for Time Margining.\n"
     "-v <steps>\t\tSpecify maximum number of steps for Voltage Margining.\n";
 
-static const char *
-skip_slot_prefix(const char *slot)
+bool
+margin_parse_dut_identifier(const char *spec, struct margin_dut_identifier *out)
 {
-  if (!slot)
-    return slot;
+  if (!spec || !*spec || !out)
+    return false;
 
-  if (tolower((unsigned char)slot[0]) == 's'
-      && tolower((unsigned char)slot[1]) == 'l'
-      && tolower((unsigned char)slot[2]) == 'o'
-      && tolower((unsigned char)slot[3]) == 't')
+  const char *slot_part = strrchr(spec, '@');
+  size_t host_len = 0;
+  if (slot_part)
     {
-      slot += 4;
-      while (*slot && !isalnum((unsigned char)*slot))
-        slot++;
+      host_len = slot_part - spec;
+      slot_part++;
+    }
+  else
+    slot_part = spec;
+
+  while (*slot_part && isspace((unsigned char)*slot_part))
+    slot_part++;
+
+  if (!*slot_part)
+    return false;
+
+  const char *p = slot_part;
+  const char *prefix_end = p;
+
+  if (tolower((unsigned char)p[0]) == 's'
+      && tolower((unsigned char)p[1]) == 'l'
+      && tolower((unsigned char)p[2]) == 'o'
+      && tolower((unsigned char)p[3]) == 't')
+    prefix_end = p + 4;
+  else if (tolower((unsigned char)p[0]) == 'd'
+           && tolower((unsigned char)p[1]) == 'u'
+           && tolower((unsigned char)p[2]) == 't')
+    prefix_end = p + 3;
+  else
+    return false;
+
+  p = prefix_end;
+  while (*p && !isdigit((unsigned char)*p))
+    {
+      if (isalpha((unsigned char)*p))
+        return false;
+      p++;
     }
 
-  return slot;
-}
-
-static bool
-looks_like_slot_identifier(const char *filter)
-{
-  if (!filter || !*filter)
+  if (!isdigit((unsigned char)*p))
     return false;
 
-  const char *without_prefix = skip_slot_prefix(filter);
-  if (without_prefix != filter && !*without_prefix)
-    return false;
-
-  if (without_prefix != filter)
-    return true;
-
-  for (const char *c = filter; *c; c++)
-    if (*c == ':' || *c == '.')
-      return false;
-
-  for (const char *c = filter; *c; c++)
-    if (isalnum((unsigned char)*c))
-      return true;
-
-  return false;
-}
-
-static bool
-read_slot_address(const char *slot_name, char *address, size_t address_len)
-{
-  if (!slot_name || !*slot_name || strchr(slot_name, '/'))
-    return false;
-
-  char path[PATH_MAX];
-  int written = snprintf(path, sizeof(path), "/sys/bus/pci/slots/%s/address", slot_name);
-  if (written <= 0 || written >= (int)sizeof(path))
-    return false;
-
-  FILE *f = fopen(path, "r");
-  if (!f)
-    return false;
-
-  bool ok = fgets(address, address_len, f) != NULL;
-  fclose(f);
-
-  if (!ok)
-    return false;
-
-  char *newline = strchr(address, '\n');
-  if (newline)
-    *newline = '\0';
-
-  return *address;
-}
-
-static bool
-resolve_slot_identifier(const char *filter, char *address, size_t address_len)
-{
-  if (!filter)
-    return false;
-
-  if (read_slot_address(filter, address, address_len))
-    return true;
-
-  const char *suffix = skip_slot_prefix(filter);
-  if (suffix != filter && *suffix)
+  const char *digits_start = p;
+  unsigned int slot = 0;
+  while (isdigit((unsigned char)*p))
     {
-      char sanitized[NAME_MAX];
-      size_t out = 0;
-      for (const char *c = suffix; *c && out < sizeof(sanitized) - 1; c++)
-        if (isalnum((unsigned char)*c))
-          sanitized[out++] = *c;
-      sanitized[out] = '\0';
+      slot = slot * 10 + (*p - '0');
+      if (slot > 255)
+        return false;
+      p++;
+    }
 
-      if (out && read_slot_address(sanitized, address, address_len))
-        return true;
+  const char *digits_end = p;
 
-      if (out)
+  while (*p)
+    {
+      if (isspace((unsigned char)*p) || *p == '_' || *p == '-')
         {
-          char prefixed[NAME_MAX];
-          int written = snprintf(prefixed, sizeof(prefixed), "slot%s", sanitized);
-          if (written > 0 && written < (int)sizeof(prefixed)
-              && read_slot_address(prefixed, address, address_len))
-            return true;
+          p++;
+          continue;
         }
+      return false;
     }
 
-  char lowered[NAME_MAX];
-  size_t idx = 0;
-  while (filter[idx] && idx < sizeof(lowered) - 1)
+  if (!slot)
+    return false;
+
+  size_t pos = 0;
+  if (host_len)
     {
-      lowered[idx] = tolower((unsigned char)filter[idx]);
-      idx++;
+      if (host_len >= sizeof(out->remote_spec))
+        return false;
+      memcpy(out->remote_spec, spec, host_len);
+      pos = host_len;
+      if (pos + 1 >= sizeof(out->remote_spec))
+        return false;
+      out->remote_spec[pos++] = '@';
     }
-  lowered[idx] = '\0';
 
-  if (strcmp(lowered, filter) != 0 && read_slot_address(lowered, address, address_len))
-    return true;
+  size_t digits_len = digits_end - digits_start;
+  if (!digits_len || pos + digits_len >= sizeof(out->remote_spec))
+    return false;
 
-  return false;
+  memcpy(out->remote_spec + pos, digits_start, digits_len);
+  pos += digits_len;
+  out->remote_spec[pos] = '\0';
+  out->slot = slot;
+  return true;
 }
 
 static struct pci_dev *
@@ -168,10 +141,12 @@ dev_for_filter(struct pci_access *pacc, char *filter, bool *skip_role_check)
   char slot_address[32];
   char *filter_value = filter;
 
-  if (looks_like_slot_identifier(filter))
+  struct margin_dut_identifier dut;
+  if (margin_parse_dut_identifier(filter, &dut))
     {
-      if (!resolve_slot_identifier(filter, slot_address, sizeof(slot_address)))
-        die("No such PCI slot: %s or you don't have enough privileges.\n", filter);
+      if (snprintf(slot_address, sizeof(slot_address), "%04x:%02x:%02x.%u", 0, 0, dut.slot, 0)
+          >= (int)sizeof(slot_address))
+        die("Invalid remote slot identifier: %s\n", filter);
 
       filter_value = slot_address;
       *skip_role_check = true;

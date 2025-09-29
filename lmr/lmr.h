@@ -148,6 +148,13 @@ struct margin_link {
   struct margin_link_args args;
 };
 
+enum { MARGIN_REMOTE_SPEC_MAX = 128 };
+
+struct margin_dut_identifier {
+  unsigned int slot;
+  char remote_spec[MARGIN_REMOTE_SPEC_MAX];
+};
+
 /* Receiver structure */
 struct margin_recv {
   struct margin_dev *dev;
@@ -185,6 +192,8 @@ extern const char *usage;
 
 struct margin_link *margin_parse_util_args(struct pci_access *pacc, int argc, char **argv,
                                            enum margin_mode mode, u8 *links_n);
+
+bool margin_parse_dut_identifier(const char *spec, struct margin_dut_identifier *out);
 
 /* margin_hw */
 
