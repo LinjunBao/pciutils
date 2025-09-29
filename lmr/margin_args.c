@@ -8,6 +8,7 @@
  *	SPDX-License-Identifier: GPL-2.0-or-later
  */
 
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -36,12 +37,127 @@ const char *usage
     "-t <steps>\t\tSpecify maximum number of steps for Time Margining.\n"
     "-v <steps>\t\tSpecify maximum number of steps for Voltage Margining.\n";
 
-static struct pci_dev *
-dev_for_filter(struct pci_access *pacc, char *filter)
+bool
+margin_parse_dut_identifier(const char *spec, struct margin_dut_identifier *out)
 {
+  if (!spec || !*spec || !out)
+    return false;
+
+  const char *slot_part = strrchr(spec, '@');
+  size_t host_len = 0;
+  if (slot_part)
+    {
+      host_len = slot_part - spec;
+      slot_part++;
+    }
+  else
+    slot_part = spec;
+
+  while (*slot_part && isspace((unsigned char)*slot_part))
+    slot_part++;
+
+  if (!*slot_part)
+    return false;
+
+  const char *p = slot_part;
+  const char *prefix_end = p;
+
+  if (tolower((unsigned char)p[0]) == 's'
+      && tolower((unsigned char)p[1]) == 'l'
+      && tolower((unsigned char)p[2]) == 'o'
+      && tolower((unsigned char)p[3]) == 't')
+    prefix_end = p + 4;
+  else if (tolower((unsigned char)p[0]) == 'd'
+           && tolower((unsigned char)p[1]) == 'u'
+           && tolower((unsigned char)p[2]) == 't')
+    prefix_end = p + 3;
+  else
+    return false;
+
+  p = prefix_end;
+  while (*p && !isdigit((unsigned char)*p))
+    {
+      if (isalpha((unsigned char)*p))
+        return false;
+      p++;
+    }
+
+  if (!isdigit((unsigned char)*p))
+    return false;
+
+  const char *digits_start = p;
+  unsigned int slot = 0;
+  while (isdigit((unsigned char)*p))
+    {
+      slot = slot * 10 + (*p - '0');
+      if (slot > 255)
+        return false;
+      p++;
+    }
+
+  const char *digits_end = p;
+
+  while (*p)
+    {
+      if (isspace((unsigned char)*p) || *p == '_' || *p == '-')
+        {
+          p++;
+          continue;
+        }
+      return false;
+    }
+
+  if (!slot)
+    return false;
+
+  size_t pos = 0;
+  if (host_len)
+    {
+      if (host_len >= sizeof(out->remote_spec))
+        return false;
+      memcpy(out->remote_spec, spec, host_len);
+      pos = host_len;
+      if (pos + 1 >= sizeof(out->remote_spec))
+        return false;
+      out->remote_spec[pos++] = '@';
+    }
+
+  size_t digits_len = digits_end - digits_start;
+  if (!digits_len || pos + digits_len >= sizeof(out->remote_spec))
+    return false;
+
+  memcpy(out->remote_spec + pos, digits_start, digits_len);
+  pos += digits_len;
+  out->remote_spec[pos] = '\0';
+  out->slot = slot;
+  return true;
+}
+
+static struct pci_dev *
+dev_for_filter(struct pci_access *pacc, char *filter, bool *skip_role_check,
+               bool *skip_pair_lookup)
+{
+  *skip_role_check = false;
+  *skip_pair_lookup = false;
+
+  char slot_address[32];
+  char *filter_value = filter;
+
+  struct margin_dut_identifier dut;
+  if (margin_parse_dut_identifier(filter, &dut))
+    {
+      if (snprintf(slot_address, sizeof(slot_address), "%04x:%02x:%02x.%u", 0, 0, dut.slot, 0)
+          >= (int)sizeof(slot_address))
+        die("Invalid remote slot identifier: %s\n", filter);
+
+      filter_value = slot_address;
+      *skip_role_check = true;
+      *skip_pair_lookup = true;
+    }
+
   struct pci_filter pci_filter;
   pci_filter_init(pacc, &pci_filter);
-  if (pci_filter_parse_slot(&pci_filter, filter))
+  if (pci_filter_parse_slot(&pci_filter, filter_value))
     die("Invalid device ID: %s\n", filter);
 
   if (pci_filter.bus == -1 || pci_filter.slot == -1 || pci_filter.func == -1)
@@ -85,11 +201,11 @@ find_ready_links(struct pci_access *pacc, struct margin_link *links, bool cnt_on
           struct pci_dev *up = NULL;
           margin_find_pair(pacc, p, &down, &up);
 
-          if (down && margin_verify_link(down, up)
+          if (down && margin_verify_link(down, up, false)
               && (margin_check_ready_bit(down) || margin_check_ready_bit(up)))
             {
               if (!cnt_only)
-                margin_fill_link(down, up, &(links[cnt]));
+                margin_fill_link(down, up, &(links[cnt]), false);
               cnt++;
             }
         }
@@ -269,18 +385,26 @@ margin_parse_util_args(struct pci_access *pacc, int argc, char **argv, enum marg
     {
       while (optind != argc)
         {
-          struct pci_dev *dev = dev_for_filter(pacc, argv[optind]);
+          bool skip_role_check;
+          bool skip_pair_lookup;
+          struct pci_dev *dev
+            = dev_for_filter(pacc, argv[optind], &skip_role_check, &skip_pair_lookup);
           optind++;
           links = xrealloc(links, (ports_n + 1) * sizeof(*links));
           struct pci_dev *down;
           struct pci_dev *up;
-          if (!margin_find_pair(pacc, dev, &down, &up))
+          if (skip_pair_lookup)
+            {
+              down = dev;
+              up = dev;
+            }
+          else if (!margin_find_pair(pacc, dev, &down, &up))
             die("Cannot find pair for the specified device: %s\n", argv[optind - 1]);
           struct pci_cap *cap = pci_find_cap(down, PCI_CAP_ID_EXP, PCI_CAP_NORMAL);
           if (!cap)
             die("Looks like you don't have enough privileges to access "
                 "Device Configuration Space.\nTry to run utility as root.\n");
-          if (!margin_fill_link(down, up, &(links[ports_n])))
+          if (!margin_fill_link(down, up, &(links[ports_n]), skip_role_check))
             {
               margin_gen_bdfs(down, up, err, sizeof(err));
               die("Link %s is not ready for margining.\n"
@@ -288,6 +412,7 @@ margin_parse_util_args(struct pci_access *pacc, int argc, char **argv, enum marg
                   "Downstream Component must be at D0 PM state.\n",
                   err);
             }
+          links[ports_n].skip_pair_lookup = skip_pair_lookup;
           init_link_args(&(links[ports_n].args), com_args);
           parse_dev_args(argc, argv, &(links[ports_n].args),
                          links[ports_n].down_port.link_speed - 4);

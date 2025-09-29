@@ -146,6 +146,14 @@ struct margin_link {
   struct margin_dev down_port;
   struct margin_dev up_port;
   struct margin_link_args args;
+  bool skip_pair_lookup;
+};
+
+enum { MARGIN_REMOTE_SPEC_MAX = 128 };
+
+struct margin_dut_identifier {
+  unsigned int slot;
+  char remote_spec[MARGIN_REMOTE_SPEC_MAX];
 };
 
 /* Receiver structure */
@@ -186,6 +194,8 @@ extern const char *usage;
 struct margin_link *margin_parse_util_args(struct pci_access *pacc, int argc, char **argv,
                                            enum margin_mode mode, u8 *links_n);
 
+bool margin_parse_dut_identifier(const char *spec, struct margin_dut_identifier *out);
+
 /* margin_hw */
 
 bool margin_port_is_down(struct pci_dev *dev);
@@ -195,14 +205,14 @@ bool margin_find_pair(struct pci_access *pacc, struct pci_dev *dev, struct pci_d
                       struct pci_dev **up_port);
 
 /* Verify that devices form the link with 16 GT/s or 32 GT/s data rate */
-bool margin_verify_link(struct pci_dev *down_port, struct pci_dev *up_port);
+bool margin_verify_link(struct pci_dev *down_port, struct pci_dev *up_port, bool skip_role_check);
 
 /* Check Margining Ready bit from Margining Port Status Register */
 bool margin_check_ready_bit(struct pci_dev *dev);
 
 /* Verify link and fill wrappers */
 bool margin_fill_link(struct pci_dev *down_port, struct pci_dev *up_port,
-                      struct margin_link *wrappers);
+                      struct margin_link *wrappers, bool skip_role_check);
 
 /* Disable ASPM, set Hardware Autonomous Speed/Width Disable bits */
 bool margin_prep_link(struct margin_link *link);
@@ -214,7 +224,7 @@ void margin_restore_link(struct margin_link *link);
 
 /* Fill margin_params without calling other functions */
 bool margin_read_params(struct pci_access *pacc, struct pci_dev *dev, u8 recvn,
-                        struct margin_params *params);
+                        struct margin_params *params, bool skip_pair_lookup);
 
 enum margin_test_status margin_process_args(struct margin_link *link);
 

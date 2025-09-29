@@ -427,7 +427,7 @@ margin_test_receiver(struct margin_dev *dev, u8 recvn, struct margin_link_args *
 
 bool
 margin_read_params(struct pci_access *pacc, struct pci_dev *dev, u8 recvn,
-                   struct margin_params *params)
+                   struct margin_params *params, bool skip_pair_lookup)
 {
   struct pci_cap *cap = pci_find_cap(dev, PCI_CAP_ID_EXP, PCI_CAP_NORMAL);
   if (!cap)
@@ -445,22 +445,39 @@ margin_read_params(struct pci_access *pacc, struct pci_dev *dev, u8 recvn,
 
   if (recvn > 6)
     return false;
-  if (dev_down && recvn == 6)
-    return false;
-  if (!dev_down && recvn != 6)
-    return false;
+  if (!skip_pair_lookup)
+    {
+      if (dev_down && recvn == 6)
+        return false;
+      if (!dev_down && recvn != 6)
+        return false;
+    }
 
   struct pci_dev *down = NULL;
   struct pci_dev *up = NULL;
   struct margin_link link;
 
-  if (!margin_find_pair(pacc, dev, &down, &up))
-    return false;
+  if (skip_pair_lookup)
+    {
+      down = dev;
+      up = dev;
+      if (!margin_fill_link(down, up, &link, true))
+        return false;
+    }
+  else
+    {
+      if (!margin_find_pair(pacc, dev, &down, &up))
+        return false;
 
-  if (!margin_fill_link(down, up, &link))
-    return false;
+      if (!margin_fill_link(down, up, &link, false))
+        return false;
+    }
 
-  struct margin_dev *dut = (dev_down ? &link.down_port : &link.up_port);
+  struct margin_dev *dut;
+  if (skip_pair_lookup)
+    dut = (recvn == 6 ? &link.up_port : &link.down_port);
+  else
+    dut = (dev_down ? &link.down_port : &link.up_port);
   if (!margin_check_ready_bit(dut->dev))
     return false;
 

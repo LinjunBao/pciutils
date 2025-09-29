@@ -11,10 +11,59 @@
 #include <memory.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "lmr/lmr.h"
 
 const char program_name[] = "pcilmr";
+
+static void
+configure_remote_backend(struct pci_access *pacc, int argc, char **argv)
+{
+  bool skip_next = false;
+  struct margin_dut_identifier dut;
+
+  for (int i = 1; i < argc; i++)
+    {
+      if (skip_next)
+        {
+          skip_next = false;
+          continue;
+        }
+
+      const char *arg = argv[i];
+      if (!arg || !*arg)
+        continue;
+
+      if (arg[0] == '-')
+        {
+          const char *opt = arg + 1;
+          while (*opt == '-')
+            opt++;
+          if (!*opt)
+            continue;
+
+          if (!opt[1] && strchr("eodrlptvg", opt[0]))
+            skip_next = true;
+          continue;
+        }
+
+      if (!margin_parse_dut_identifier(arg, &dut))
+        continue;
+
+      if (pci_set_param(pacc, "remote.slot", dut.remote_spec) < 0)
+        die("Unable to configure remote slot specifier: %s", dut.remote_spec);
+
+      if (pacc->method == PCI_ACCESS_AUTO)
+        {
+          int method = pci_lookup_method("remote-socket");
+          if (method >= 0)
+            pacc->method = method;
+        }
+
+      return;
+    }
+}
 
 static void
 scan_links(struct pci_access *pacc, bool only_ready)
@@ -32,7 +81,7 @@ scan_links(struct pci_access *pacc, bool only_ready)
           struct pci_dev *up = NULL;
           margin_find_pair(pacc, p, &down, &up);
 
-          if (down && margin_verify_link(down, up))
+          if (down && margin_verify_link(down, up, false))
             {
               margin_log_bdfs(down, up);
               if (!only_ready && (margin_check_ready_bit(down) || margin_check_ready_bit(up)))
@@ -64,6 +113,7 @@ main(int argc, char **argv)
   u8 *results_n;
 
   pacc = pci_alloc();
+  configure_remote_backend(pacc, argc, argv);
   pci_init(pacc);
   pci_scan_bus(pacc);
 
@@ -141,7 +191,7 @@ main(int argc, char **argv)
         {
           if (margin_read_params(
                 pacc, link_args->recvs[j] == 6 ? links[i].up_port.dev : links[i].down_port.dev,
-                link_args->recvs[j], &params))
+                link_args->recvs[j], &params, links[i].skip_pair_lookup))
             {
               u8 steps_t = link_args->steps_t ? link_args->steps_t : params.timing_steps;
               u8 steps_v = link_args->steps_v ? link_args->steps_v : params.volt_steps;
