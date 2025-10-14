@@ -71,6 +71,11 @@ remote management controller. The slot string must include the complete
 portion is omitted the controller address is derived from the local IPv4
 configuration: \fIsetpci\fP expects to own \fB192.168.<bus>.1<device>\fP and
 will contact \fB192.168.<bus>.<device>\fP on port 4001.
+.TP
+.B --enp[=<0|1>]
+Control the ENP flag used for remote register accesses. Without an explicit
+value the flag is asserted. Providing \fB0\fP or \fB1\fP lets you force a
+specific value when communicating with the remote controller.
 
 .SS PCI access options
 .PP

@@ -58,6 +58,7 @@ static char *remote_slot_spec;
 static char *remote_slot_bdf;
 static struct pci_filter remote_slot_filter;
 static int remote_slot_enabled;
+static char *remote_enp_value;
 
 static void
 consume_remote_slot_option(int *argc, char ***argvp)
@@ -106,6 +107,24 @@ consume_remote_slot_option(int *argc, char ***argvp)
             die("--slot requires a device address after '@'");
           remote_slot_bdf = xstrdup(bdf);
 
+          continue;
+        }
+
+      if (!strcmp(arg, "--enp"))
+        {
+          if (remote_enp_value)
+            die("--enp specified multiple times");
+          remote_enp_value = xstrdup("1");
+          continue;
+        }
+
+      if (!strncmp(arg, "--enp=", 6))
+        {
+          if (remote_enp_value)
+            die("--enp specified multiple times");
+          if (!arg[6])
+            die("--enp requires a value when using '=' syntax");
+          remote_enp_value = xstrdup(arg + 6);
           continue;
         }
 
@@ -494,6 +513,7 @@ usage(void)
 "-r\t\tUse raw access without bus scan if possible\n"
 "--dumpregs\tDump all known register names and exit\n"
 "--slot [<host>[:<port>]@]<slot>\tAccess remote slot via MCU socket\n"
+"--enp[=<0|1>]\t\tSet remote slot ENP flag (default: enabled when option is present)\n"
 "\n"
 "PCI access options:\n"
 GENERIC_HELP
@@ -903,6 +923,11 @@ main(int argc, char **argv)
 
   pacc = pci_alloc();
   pacc->error = die;
+  if (remote_enp_value)
+    {
+      if (pci_set_param(pacc, "remote.enp", remote_enp_value) < 0)
+        die("Unable to configure remote ENP flag");
+    }
   if (remote_slot_spec)
     {
       struct pci_filter tmp;

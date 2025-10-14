@@ -22,6 +22,7 @@ configure_remote_backend(struct pci_access *pacc, int argc, char **argv)
 {
   bool skip_next = false;
   struct margin_dut_identifier dut;
+  bool enp_configured = false;
 
   for (int i = 1; i < argc; i++)
     {
@@ -42,6 +43,28 @@ configure_remote_backend(struct pci_access *pacc, int argc, char **argv)
             opt++;
           if (!*opt)
             continue;
+
+          if (!strncmp(opt, "enp", 3))
+            {
+              if (enp_configured)
+                die("--enp specified multiple times");
+              const char *value;
+              if (opt[3] == '=')
+                {
+                  value = opt + 4;
+                  if (!*value)
+                    die("--enp requires a value when using '=' syntax");
+                }
+              else if (!opt[3])
+                value = "1";
+              else
+                die("Unknown option --%s", opt);
+
+              if (pci_set_param(pacc, "remote.enp", (char *) value) < 0)
+                die("Unable to configure remote ENP flag: %s", value);
+              enp_configured = true;
+              continue;
+            }
 
           if (!opt[1] && strchr("eodrlptvg", opt[0]))
             skip_next = true;
