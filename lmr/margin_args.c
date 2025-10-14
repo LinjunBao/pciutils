@@ -30,6 +30,7 @@ const char *usage
     "--scan\t\t\tScan for Links available for margining\n\n"
     "Margining options (see man for all options):\n\n"
     "Common (for all specified links) options:\n"
+    "--enp[=<0|1>]\tSet remote slot ENP flag when accessing a remote DUT.\n"
     "-c\t\t\tPrint Device Lane Margining Capabilities only. Do not run margining.\n\n"
     "Link specific options:\n"
     "-r <recvn>[,<recvn>...]\tSpecify Receivers to select margining targets.\n"

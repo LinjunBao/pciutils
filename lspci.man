@@ -180,6 +180,12 @@ IPv4 assignment: it expects the machine running \fIlspci\fP to own the address
 \fB192.168.<bus>.1<device>\fP and connects to \fB192.168.<bus>.<device>\fP on
 port 4001.
 .TP
+.B --enp[=<0|1>]
+Override the ENP flag that is sent as part of remote register accesses. When
+no value is supplied, the flag is asserted (set to 1). Supplying an explicit
+value allows forcing the flag to either 0 or 1 when communicating with the
+remote management controller.
+.TP
 .B --version
 Shows
 .I lspci

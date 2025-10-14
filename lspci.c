@@ -39,6 +39,7 @@ static char *opt_remote_slot_spec;
 static char *opt_remote_slot_bdf;
 static struct pci_filter remote_slot_filter;
 static int remote_slot_enabled;
+static char *opt_remote_enp_value;
 
 static void
 consume_remote_slot_option(int *argc, char ***argvp)
@@ -90,6 +91,24 @@ consume_remote_slot_option(int *argc, char ***argvp)
           continue;
         }
 
+      if (!strcmp(arg, "--enp"))
+        {
+          if (opt_remote_enp_value)
+            die("--enp specified multiple times");
+          opt_remote_enp_value = xstrdup("1");
+          continue;
+        }
+
+      if (!strncmp(arg, "--enp=", 6))
+        {
+          if (opt_remote_enp_value)
+            die("--enp specified multiple times");
+          if (!arg[6])
+            die("--enp requires a value when using '=' syntax");
+          opt_remote_enp_value = xstrdup(arg + 6);
+          continue;
+        }
+
       argv[dst++] = arg;
     }
 
@@ -137,6 +156,7 @@ static char help_msg[] =
 #endif
 "-M\t\tEnable `bus mapping' mode (dangerous; root only)\n"
 "--slot [<host>[:<port>]@]<slot>\tAccess remote slot via MCU socket\n"
+"--enp[=<0|1>]\t\tSet remote slot ENP flag (default: enabled when option is present)\n"
 "\n"
 "PCI access options:\n"
 GENERIC_HELP
@@ -1186,6 +1206,12 @@ main(int argc, char **argv)
   pacc = pci_alloc();
   pacc->error = die;
   pci_filter_init(pacc, &filter);
+
+  if (opt_remote_enp_value)
+    {
+      if (pci_set_param(pacc, "remote.enp", opt_remote_enp_value) < 0)
+        die("Unable to configure remote ENP flag");
+    }
 
   if (opt_remote_slot_spec)
     {

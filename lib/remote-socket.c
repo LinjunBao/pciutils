@@ -40,6 +40,7 @@ struct remote_ctx
   int bus;
   int slot;
   int func;
+  int rp_enp_flag;
   char slot_id[64];
   int host_auto;
 };
@@ -49,6 +50,7 @@ remote_config(struct pci_access *a)
 {
   pci_define_param(a, "remote.slot", "", "Remote MCU slot specification [<host>[:<port>]@]<slot_number|domain:bus:slot.func>");
   pci_define_param(a, "remote.timeout", "5000", "Remote MCU socket timeout in milliseconds");
+  pci_define_param(a, "remote.enp", "0", "Remote MCU RP ENP flag (0 or 1)");
 }
 
 static int
@@ -228,6 +230,22 @@ remote_parse_timeout(struct remote_ctx *ctx, struct pci_access *a)
 }
 
 static void
+remote_parse_enp(struct remote_ctx *ctx, struct pci_access *a)
+{
+  char *val = pci_get_param(a, "remote.enp");
+  if (val && *val)
+    {
+      char *end;
+      long flag = strtol(val, &end, 0);
+      if (*end || flag < 0 || flag > 1)
+        a->error("Invalid remote ENP flag value: %s", val);
+      ctx->rp_enp_flag = flag;
+    }
+  else
+    ctx->rp_enp_flag = 0;
+}
+
+static void
 remote_init(struct pci_access *a)
 {
   struct remote_ctx *ctx = pci_malloc(a, sizeof(*ctx));
@@ -237,6 +255,7 @@ remote_init(struct pci_access *a)
   const char *spec = pci_get_param(a, "remote.slot");
   remote_parse_slot(ctx, a, spec);
   remote_parse_timeout(ctx, a);
+  remote_parse_enp(ctx, a);
 
   if (ctx->host_auto)
     remote_select_default_host(ctx);
@@ -425,7 +444,7 @@ remote_regaddr(const struct remote_ctx *ctx, unsigned int pos)
 {
   unsigned int flag = (unsigned int) (0x3 & 0xff);  // bit[19:18]
   unsigned int slot = (unsigned int) ((ctx->slot & 0xff) - 1); // bit[17:15]
-  unsigned int rp_enp_flag = (unsigned int) (0); // bit[14]
+  unsigned int rp_enp_flag = ctx->rp_enp_flag ? 1U : 0U; // bit[14]
   unsigned int offset = pos & ~1U; // bit[13:0]
 
   return (flag << 18) | (slot << 15) | (rp_enp_flag << 14) | (offset & 0x3fff);

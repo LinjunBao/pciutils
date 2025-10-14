@@ -172,6 +172,11 @@ will generate file with the name in form of
 .RI "\[dq]lmr_" "<port>" "_Rx" # _ <timestamp> ".csv\[dq]"
 for each successfully tested receiver.
 .TP
+.BI --enp "[=<0|1>]"
+Override the ENP flag used for remote register accesses. When the option is
+present without a value the flag is forced to 1. Supplying \fB0\fP or \fB1\fP
+lets you control the exact value sent to the management controller.
+.TP
 .BI -d " <time>"
 Specify dwell time in seconds for the margining step.
 .br
