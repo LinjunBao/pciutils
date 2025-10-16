@@ -17,24 +17,29 @@
 
 const char program_name[] = "pcilmr";
 
-static void
+static int
 configure_remote_backend(struct pci_access *pacc, int argc, char **argv)
 {
-  bool skip_next = false;
   struct margin_dut_identifier dut;
   bool enp_configured = false;
+  bool skip_next = false;
+  int write = 1;
 
   for (int i = 1; i < argc; i++)
     {
-      if (skip_next)
+      const char *arg = argv[i];
+      if (!arg || !*arg)
         {
-          skip_next = false;
+          argv[write++] = argv[i];
           continue;
         }
 
-      const char *arg = argv[i];
-      if (!arg || !*arg)
-        continue;
+      if (skip_next)
+        {
+          skip_next = false;
+          argv[write++] = argv[i];
+          continue;
+        }
 
       if (arg[0] == '-')
         {
@@ -42,7 +47,10 @@ configure_remote_backend(struct pci_access *pacc, int argc, char **argv)
           while (*opt == '-')
             opt++;
           if (!*opt)
-            continue;
+            {
+              argv[write++] = argv[i];
+              continue;
+            }
 
           if (!strncmp(opt, "enp", 3))
             {
@@ -68,11 +76,16 @@ configure_remote_backend(struct pci_access *pacc, int argc, char **argv)
 
           if (!opt[1] && strchr("eodrlptvg", opt[0]))
             skip_next = true;
+
+          argv[write++] = argv[i];
           continue;
         }
 
       if (!margin_parse_dut_identifier(arg, &dut))
-        continue;
+        {
+          argv[write++] = argv[i];
+          continue;
+        }
 
       if (pci_set_param(pacc, "remote.slot", dut.remote_spec) < 0)
         die("Unable to configure remote slot specifier: %s", dut.remote_spec);
@@ -84,8 +97,11 @@ configure_remote_backend(struct pci_access *pacc, int argc, char **argv)
             pacc->method = method;
         }
 
-      return;
+      argv[write++] = argv[i];
     }
+
+  argv[write] = NULL;
+  return write;
 }
 
 static void
@@ -136,7 +152,7 @@ main(int argc, char **argv)
   u8 *results_n;
 
   pacc = pci_alloc();
-  configure_remote_backend(pacc, argc, argv);
+  argc = configure_remote_backend(pacc, argc, argv);
   pci_init(pacc);
   pci_scan_bus(pacc);
 
