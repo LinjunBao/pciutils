@@ -40,6 +40,7 @@ static char *opt_remote_slot_bdf;
 static struct pci_filter remote_slot_filter;
 static int remote_slot_enabled;
 static char *opt_remote_enp_value;
+static char *opt_remote_ftu_value;
 
 static void
 consume_remote_slot_option(int *argc, char ***argvp)
@@ -109,6 +110,28 @@ consume_remote_slot_option(int *argc, char ***argvp)
           continue;
         }
 
+      if (!strcmp(arg, "--ftu"))
+        {
+          if (opt_remote_ftu_value)
+            die("--ftu specified multiple times");
+          if (src + 1 >= *argc)
+            die("--ftu requires an argument");
+          if (!argv[src + 1] || !*argv[src + 1])
+            die("--ftu requires an argument");
+          opt_remote_ftu_value = xstrdup(argv[++src]);
+          continue;
+        }
+
+      if (!strncmp(arg, "--ftu=", 6))
+        {
+          if (opt_remote_ftu_value)
+            die("--ftu specified multiple times");
+          if (!arg[6])
+            die("--ftu requires a value when using '=' syntax");
+          opt_remote_ftu_value = xstrdup(arg + 6);
+          continue;
+        }
+
       argv[dst++] = arg;
     }
 
@@ -157,6 +180,7 @@ static char help_msg[] =
 "-M\t\tEnable `bus mapping' mode (dangerous; root only)\n"
 "--slot [<host>[:<port>]@]<slot>\tAccess remote slot via MCU socket\n"
 "--enp[=<0|1>]\t\tSet remote slot ENP flag (default: enabled when option is present)\n"
+"--ftu <id>\t\tDerive remote MCU address from FTU identifier instead of auto-detection\n"
 "\n"
 "PCI access options:\n"
 GENERIC_HELP
@@ -1211,6 +1235,12 @@ main(int argc, char **argv)
     {
       if (pci_set_param(pacc, "remote.enp", opt_remote_enp_value) < 0)
         die("Unable to configure remote ENP flag");
+    }
+
+  if (opt_remote_ftu_value)
+    {
+      if (pci_set_param(pacc, "remote.ftu", opt_remote_ftu_value) < 0)
+        die("Unable to configure remote FTU identifier");
     }
 
   if (opt_remote_slot_spec)

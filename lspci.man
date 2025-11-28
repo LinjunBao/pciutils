@@ -175,16 +175,20 @@ option to select a different domain.
 Forward configuration space accesses for the specified slot to a remote
 management controller reachable over TCP. The slot must be provided as a
 complete \fIdomain:bus:device.function\fP tuple. When the optional host (and
-port) part is omitted, the utility derives the remote address from the local
-IPv4 assignment: it expects the machine running \fIlspci\fP to own the address
-\fB192.168.<bus>.1<device>\fP and connects to \fB192.168.<bus>.<device>\fP on
-port 4001.
+port) part is omitted, the utility either derives the remote address from the
+\fB--ftu\fP identifier (if present) or falls back to the local IPv4 assignment.
 .TP
 .B --enp[=<0|1>]
 Override the ENP flag that is sent as part of remote register accesses. When
 no value is supplied, the flag is asserted (set to 1). Supplying an explicit
 value allows forcing the flag to either 0 or 1 when communicating with the
 remote management controller.
+.TP
+.B --ftu <id>
+Specify an FTU identifier that is converted to the target MCU IPv4 address
+(\fB192.168.a.b\fP with \(aqa = (id - 1) / 4 + 1\(aq and \(aqb = id - (a - 1) * 4\(aq)
+whenever the host portion of \fB--slot\fP is omitted. This replaces the default
+heuristic that tries to infer the remote host from the local interface address.
 .TP
 .B --version
 Shows

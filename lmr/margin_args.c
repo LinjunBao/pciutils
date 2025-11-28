@@ -31,6 +31,7 @@ const char *usage
     "Margining options (see man for all options):\n\n"
     "Common (for all specified links) options:\n"
     "--enp[=<0|1>]\tSet remote slot ENP flag when accessing a remote DUT.\n"
+    "--ftu <id>\tUse FTU identifier to derive remote DUT address.\n"
     "-c\t\t\tPrint Device Lane Margining Capabilities only. Do not run margining.\n\n"
     "Link specific options:\n"
     "-r <recvn>[,<recvn>...]\tSpecify Receivers to select margining targets.\n"

@@ -22,6 +22,7 @@ configure_remote_backend(struct pci_access *pacc, int argc, char **argv)
 {
   struct margin_dut_identifier dut;
   bool enp_configured = false;
+  bool ftu_configured = false;
   bool skip_next = false;
   int write = 1;
 
@@ -71,6 +72,34 @@ configure_remote_backend(struct pci_access *pacc, int argc, char **argv)
               if (pci_set_param(pacc, "remote.enp", (char *) value) < 0)
                 die("Unable to configure remote ENP flag: %s", value);
               enp_configured = true;
+              continue;
+            }
+
+          if (!strncmp(opt, "ftu", 3))
+            {
+              if (ftu_configured)
+                die("--ftu specified multiple times");
+              const char *value = NULL;
+              if (opt[3] == '=')
+                {
+                  value = opt + 4;
+                  if (!*value)
+                    die("--ftu requires a value when using '=' syntax");
+                }
+              else if (!opt[3])
+                {
+                  if (i + 1 >= argc)
+                    die("--ftu requires an argument");
+                  value = argv[++i];
+                  if (!value || !*value)
+                    die("--ftu requires an argument");
+                }
+              else
+                die("Unknown option --%s", opt);
+
+              if (pci_set_param(pacc, "remote.ftu", (char *) value) < 0)
+                die("Unable to configure remote FTU identifier: %s", value);
+              ftu_configured = true;
               continue;
             }
 

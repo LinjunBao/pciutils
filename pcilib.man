@@ -163,7 +163,9 @@ socket. This method honours the
 .B remote.timeout
 parameter for request timeouts. Unless a host is specified explicitly through
 .B remote.slot
-the library derives it from the requested bus and device numbers and connects
+the library derives it either from the
+.B remote.ftu
+parameter or, if left unset, from the current IPv4 address and connects
 to the controller on TCP port 4001.
 .TP
 .B aos-expansion
@@ -213,8 +215,14 @@ Path to the rt-thread smart DM procfs device tree.
 Slot specification for the \fBremote-socket\fP access method. The value must be
 of the form [\fIhost\fP[:\fIport\fP]@]\fIdomain:bus:device.function\fP and
 identifies both the remote controller and the target PCI device. When the host
-portion is omitted the library expects to run on \fB192.168.<bus>.1<device>\fP
-and contacts \fB192.168.<bus>.<device>\fP on port 4001.
+portion is omitted the library uses the \fBremote.ftu\fP mapping if available or
+falls back to inspecting the local IPv4 configuration.
+.TP
+.B remote.ftu
+Identifier used to derive the remote MCU IPv4 address when
+.B remote.slot
+is provided without an explicit host. The controller address becomes
+\fB192.168.a.b\fP, where \(aqa = (id - 1) / 4 + 1\(aq and \(aqb = id - (a - 1) * 4\(aq.
 .TP
 .B remote.timeout
 Timeout in milliseconds for socket communication when using the

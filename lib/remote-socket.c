@@ -43,6 +43,7 @@ struct remote_ctx
   int rp_enp_flag;
   char slot_id[64];
   int host_auto;
+  int ftu_id;
 };
 
 static void
@@ -51,6 +52,7 @@ remote_config(struct pci_access *a)
   pci_define_param(a, "remote.slot", "", "Remote MCU slot specification [<host>[:<port>]@]<slot_number|domain:bus:slot.func>");
   pci_define_param(a, "remote.timeout", "5000", "Remote MCU socket timeout in milliseconds");
   pci_define_param(a, "remote.enp", "0", "Remote MCU RP ENP flag (0 or 1)");
+  pci_define_param(a, "remote.ftu", "", "Remote MCU FTU identifier used to derive host address when unspecified");
 }
 
 static int
@@ -246,6 +248,50 @@ remote_parse_enp(struct remote_ctx *ctx, struct pci_access *a)
 }
 
 static void
+remote_parse_ftu(struct remote_ctx *ctx, struct pci_access *a)
+{
+  char *val = pci_get_param(a, "remote.ftu");
+  if (val && *val)
+    {
+      char *end;
+      long id = strtol(val, &end, 10);
+      if (*end || id < 1)
+        a->error("Invalid remote FTU identifier: %s", val);
+      ctx->ftu_id = (int) id;
+    }
+  else
+    ctx->ftu_id = 0;
+}
+
+static void
+remote_apply_ftu_host(struct remote_ctx *ctx)
+{
+  if (!ctx->ftu_id)
+    return;
+
+  if (!ctx->host_auto)
+    ctx->acc->error("Remote FTU identifier cannot be combined with an explicit host address");
+
+  unsigned int id = (unsigned int) ctx->ftu_id;
+  unsigned int octet2 = ((id - 1) / 4) + 1;
+  unsigned int octet3 = id - ((octet2 - 1) * 4);
+
+  if (!octet2 || octet2 > 254 || !octet3 || octet3 > 4)
+    ctx->acc->error("Remote FTU identifier %d is outside the supported range", ctx->ftu_id);
+
+  if (ctx->host)
+    {
+      pci_mfree(ctx->host);
+      ctx->host = NULL;
+    }
+
+  char buf[INET_ADDRSTRLEN];
+  snprintf(buf, sizeof(buf), "192.168.%u.%u", octet2, octet3);
+  ctx->host = pci_strdup(ctx->acc, buf);
+  ctx->host_auto = 0;
+}
+
+static void
 remote_init(struct pci_access *a)
 {
   struct remote_ctx *ctx = pci_malloc(a, sizeof(*ctx));
@@ -256,6 +302,8 @@ remote_init(struct pci_access *a)
   remote_parse_slot(ctx, a, spec);
   remote_parse_timeout(ctx, a);
   remote_parse_enp(ctx, a);
+  remote_parse_ftu(ctx, a);
+  remote_apply_ftu_host(ctx);
 
   if (ctx->host_auto)
     remote_select_default_host(ctx);

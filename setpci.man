@@ -68,9 +68,14 @@ used stand-alone.
 Forward all configuration space accesses to the specified slot through a
 remote management controller. The slot string must include the complete
 \fIdomain:bus:device.function\fP tuple. When the host (and optional port)
-portion is omitted the controller address is derived from the local IPv4
-configuration: \fIsetpci\fP expects to own \fB192.168.<bus>.1<device>\fP and
-will contact \fB192.168.<bus>.<device>\fP on port 4001.
+portion is omitted the controller address is derived from the \fB--ftu\fP
+identifier (if provided) or, as a fallback, from the local IPv4 configuration.
+.TP
+.B --ftu <id>
+Specify an FTU identifier that maps to \fB192.168.a.b\fP
+(\(aqa = (id - 1) / 4 + 1\(aq and \(aqb = id - (a - 1) * 4\(aq) whenever
+the host portion of \fB--slot\fP is missing. This replaces the default
+heuristic that inspects the local network configuration.
 .TP
 .B --enp[=<0|1>]
 Control the ENP flag used for remote register accesses. Without an explicit
